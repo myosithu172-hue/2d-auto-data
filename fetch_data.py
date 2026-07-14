@@ -1,36 +1,35 @@
 import os
 import requests
-from datetime import datetime, timedelta
 
 FIREBASE_URL = os.environ.get("FIREBASE_URL")
 
-def fetch_history_100_days():
-    # History API လိပ်စာ (ဒီလင့်ခ်က ရက် ၁၀၀ စာ ပေးနိုင်ပါတယ်)
-    history_url = "https://api.thaistock2d.com/history" 
+def fetch_and_save_history():
+    # မိတ်ဆွေပြောတဲ့ History API လင့်ခ်
+    api_url = "https://api.thaistock2d.com/history"
     
     try:
-        response = requests.get(history_url, timeout=30)
+        response = requests.get(api_url, timeout=30)
         if response.status_code == 200:
-            data = response.json() # API ကပေးတဲ့ History စာရင်း
-            
+            data = response.json()
             payload = {}
+            
             for item in data:
-                date_str = item.get("date") # 2026-07-14
+                date_str = item.get("date")
                 results = item.get("results", [])
                 
-                day_data = {}
-                for res in results:
-                    time_str = res.get("open_time", "")
-                    if "12:" in time_str:
-                        day_data["morning"] = res.get("twod")
-                    elif "16:30" in time_str:
-                        day_data["evening"] = res.get("twod")
+                # တစ်နေ့တာအတွက် ဂဏန်းနှစ်ခုကိုပဲ ရှာမယ်
+                m_num = next((r.get("twod") for r in results if "12:" in r.get("open_time", "")), None)
+                e_num = next((r.get("twod") for r in results if "16:30" in r.get("open_time", "")), None)
                 
-                if day_data:
-                    payload[date_str] = day_data
+                # Database ထဲမှာ ရှင်းရှင်းလင်းလင်းဖြစ်အောင် morning/evening နဲ့ပဲ သိမ်းမယ်
+                if m_num or e_num:
+                    payload[date_str] = {}
+                    if m_num: payload[date_str]["morning"] = m_num
+                    if e_num: payload[date_str]["evening"] = e_num
             
-            # Firebase ထဲသို့ တစ်ခါတည်းတင်ခြင်း
+            # Firebase သို့ ပို့ခြင်း (History တစ်ခုလုံးကို အသစ်ပြန်တင်သလိုဖြစ်မယ်)
             db_res = requests.patch(f"{FIREBASE_URL}history.json", json=payload)
+            
             if db_res.status_code == 200:
                 print("အောင်မြင်သည်! ရက် ၁၀၀ စာ Data များ အော်တိုဝင်သွားပါပြီ။")
             else:
@@ -41,4 +40,4 @@ def fetch_history_100_days():
         print("System Error:", str(e))
 
 if __name__ == "__main__":
-    fetch_history_100_days()
+    fetch_and_save_history()
