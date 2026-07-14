@@ -25,19 +25,19 @@ def fetch_and_save():
             
             for item in results_list:
                 time_str = item.get("open_time", "")
-                if "12:" in time_str:  # ၁၂ နာရီပွဲ (မနက်ပိုင်း)
-                    morning_data = item.get("twod")
-                elif "16:30" in time_str:  # ၄ နာရီခွဲပွဲ (ညနေပိုင်း)
-                    evening_data = item.get("twod")
+                if "12:" in time_str:  # ၁၂ နာရီပွဲ
+                    morning_data = item
+                elif "16:30" in time_str:  # ၄ နာရီခွဲပွဲ
+                    evening_data = item
             
-            # ၂။ တကယ်လို့ ပွဲမပြီးသေးလို့ Result မထွက်သေးရင် Live ကနေ တိတိကျကျ အရန်တွက်မယ်
+            # ၂။ တကယ်လို့ ပွဲမပြီးသေးလို့ Result မထွက်သေးရင် Live ကနေ တိတိကျကျ ယူမယ်
             live_set = str(data.get("live", {}).get("set", "")).replace(",", "").strip()
             live_value = str(data.get("live", {}).get("value", "")).replace(",", "").strip()
             
             live_twod = "--"
             try:
                 if live_set and live_value:
-                    val_int = live_value.split(".")[0]  # ဒသမနောက်က ဂဏန်းများကို ဖြတ်ထုတ်ခြင်း
+                    val_int = live_value.split(".")[0]
                     live_twod = live_set[-1] + val_int[-1]
             except:
                 pass
@@ -47,25 +47,53 @@ def fetch_and_save():
             mmt_time = now_utc + timedelta(hours=6, minutes=30)
             today_str = mmt_time.strftime("%Y-%m-%d")
             
-            payload = {"updated_at": mmt_time.isoformat()}
-            final_number = "--"
+            # အချိန်ကို သပ်ရပ်သော ပုံစံဖြင့်ပြောင်းခြင်း (ဥပမာ: 2026-07-14 12:01:00)
+            formatted_time = mmt_time.strftime("%Y-%m-%d %H:%M:%S")
+            
+            payload = {}
             
             # နေ့လည် ၂ နာရီမတိုင်ခင်လား (သို့) ကျော်သွားပြီလား ခွဲခြားမယ်
             if mmt_time.hour < 14:
-                # မနက်ပိုင်းအတွက် (Result ရှိရင် ယူမယ်၊ မရှိရင် Live ကိုယူမယ်)
-                final_number = morning_data if morning_data else live_twod
-                payload["morning"] = final_number
+                # မနက်ပိုင်း Data စုစည်းမှု
+                if morning_data:
+                    twod = morning_data.get("twod", "")
+                    set_val = morning_data.get("set", "")
+                    value_val = morning_data.get("value", "")
+                else:
+                    twod = live_twod
+                    set_val = live_set
+                    value_val = live_value
+                    
+                payload["morning"] = {
+                    "twod": twod,
+                    "set": set_val,
+                    "value": value_val,
+                    "updated_at": formatted_time
+                }
             else:
-                # ညနေပိုင်းအတွက် (Result ရှိရင် ယူမယ်၊ မရှိရင် Live ကိုယူမယ်)
-                final_number = evening_data if evening_data else live_twod
-                payload["evening"] = final_number
+                # ညနေပိုင်း Data စုစည်းမှု
+                if evening_data:
+                    twod = evening_data.get("twod", "")
+                    set_val = evening_data.get("set", "")
+                    value_val = evening_data.get("value", "")
+                else:
+                    twod = live_twod
+                    set_val = live_set
+                    value_val = live_value
+                    
+                payload["evening"] = {
+                    "twod": twod,
+                    "set": set_val,
+                    "value": value_val,
+                    "updated_at": formatted_time
+                }
                 
             # ၄။ Firebase သို့ ပို့ခြင်း
             firebase_endpoint = f"{FIREBASE_URL}history/{today_str}.json"
             db_response = requests.patch(firebase_endpoint, json=payload)
             
             if db_response.status_code == 200:
-                print(f"အောင်မြင်သည်! 2D: {final_number} ကို App အတိုင်း တိုက်ရိုက် သိမ်းဆည်းပြီးပါပြီ။")
+                print(f"အောင်မြင်သည်! 2D ဒေတာများကို သပ်ရပ်သော Group ပုံစံဖြင့် သိမ်းဆည်းပြီးပါပြီ။")
             else:
                 print(f"Database Error: {db_response.text}")
                 
