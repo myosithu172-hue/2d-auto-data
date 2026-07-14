@@ -11,22 +11,23 @@ if not FIREBASE_URL:
 if not FIREBASE_URL.endswith("/"):
     FIREBASE_URL += "/"
 
-def get_2d_number(result):
-    # API က 2D ဂဏန်းတိုက်ရိုက်ပေးရင် ယူမယ်
-    twod = str(result.get("live", {}).get("twod", "")).strip()
-    if twod and twod != "None" and len(twod) == 2:
-        return twod
-        
-    # တိုက်ရိုက်မပေးရင် SET နဲ့ Value ထဲက နောက်ဆုံးဂဏန်းတွေကို ယူပေါင်းမယ်
-    set_val = str(result.get("live", {}).get("set", "")).strip()
-    value_val = str(result.get("live", {}).get("value", "")).strip()
-    
-    def extract_last_digit(s):
-        s = s.replace(",", "").replace(".", "").strip()
-        return s[-1] if s else "-"
-        
+def get_accurate_2d(set_val, value_val):
     try:
-        return extract_last_digit(set_val) + extract_last_digit(value_val)
+        # ၁။ SET ရဲ့ နောက်ဆုံးဂဏန်းကို ယူပါမယ် (ဥပမာ - 1,621.11 -> 1)
+        set_str = str(set_val).strip()
+        digit_1 = set_str[-1] if set_str else "-"
+        
+        # ၂။ Value ရဲ့ ဒသမသမမတိုင်ခင် (အပြည့်ကိန်း) ရဲ့ နောက်ဆုံးဂဏန်းကို ယူပါမယ် (ဥပမာ - 43,537.24 -> 7)
+        value_str = str(value_val).strip()
+        if "." in value_str:
+            value_integer = value_str.split(".")[0] # . ရဲ့ အရှေ့ပိုင်းကိုပဲ ဖြတ်ယူမယ်
+        else:
+            value_integer = value_str
+        digit_2 = value_integer[-1] if value_integer else "-"
+        
+        if digit_1 != "-" and digit_2 != "-":
+            return digit_1 + digit_2
+        return "--"
     except:
         return "--"
 
@@ -36,35 +37,44 @@ def fetch_and_save():
         
         if response.status_code == 200:
             result = response.json()
-            twod_number = get_2d_number(result)
             
-            # မြန်မာစံတော်ချိန် (UTC +6:30) သို့ ပြောင်းခြင်း
+            # API မှ SET နှင့် Value ကို တိုက်ရိုက်ရယူခြင်း
+            set_val = str(result.get("live", {}).get("set", "")).strip()
+            value_val = str(result.get("live", {}).get("value", "")).strip()
+            
+            # 2D တွက်ထုတ်မည့် ဖော်မြူလာအမှန်ဖြင့် တိတိကျကျ တွက်ချက်ခြင်း
+            twod_number = get_accurate_2d(set_val, value_val)
+            
+            # မြန်မာစံတော်ချိန် တွက်ချက်ခြင်း
             now_utc = datetime.utcnow()
             mmt_time = now_utc + timedelta(hours=6, minutes=30)
             today_str = mmt_time.strftime("%Y-%m-%d")
             
-            # နေ့လည် ၁၄:၀၀ (၂ နာရီ) မတိုင်ခင်ဆိုရင် morning၊ ကျော်သွားရင် evening လို့ သတ်မှတ်မယ်
             payload = {"updated_at": mmt_time.isoformat()}
+            
+            # နေ့လည် (၂) နာရီ မတိုင်ခင်ဆိုရင် morning၊ ကျော်ရင် evening
             if mmt_time.hour < 14:
                 payload["morning"] = twod_number
+                payload["morning_set"] = set_val
+                payload["morning_value"] = value_val
             else:
                 payload["evening"] = twod_number
+                payload["evening_set"] = set_val
+                payload["evening_value"] = value_val
             
             firebase_endpoint = f"{FIREBASE_URL}history/{today_str}.json"
-            
-            # PATCH ကိုသုံးတာဖြစ်လို့ ရှိပြီးသားဒေတာ (ဥပမာ မနက်ပိုင်း) ကို မဖျက်ဘဲ အသစ် (ညနေပိုင်း) ကိုပဲ ထပ်ထည့်ပေးပါမည်
             db_response = requests.patch(firebase_endpoint, json=payload)
             
             if db_response.status_code == 200:
-                print(f"အောင်မြင်သည်! {today_str} အတွက် ({twod_number}) ကို သိမ်းဆည်းပြီးပါပြီ။")
+                print(f"အောင်မြင်သည်! 2D: {twod_number} (SET: {set_val}, Value: {value_val})")
             else:
-                print(f"Database သို့ ပို့ရန် အဆင်မပြေပါ- {db_response.text}")
+                print(f"Database Error: {db_response.text}")
                 
         else:
-            print(f"API ထံမှ ဒေတာမရရှိပါ- Status Code {response.status_code}")
+            print(f"API Error - Code {response.status_code}")
             
     except Exception as e:
-        print(f"အမှားအယွင်း ဖြစ်ပွားခဲ့သည်- {str(e)}")
+        print(f"System Error: {str(e)}")
 
 if __name__ == "__main__":
     fetch_and_save()
