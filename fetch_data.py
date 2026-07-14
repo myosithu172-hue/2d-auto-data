@@ -11,62 +11,61 @@ if not FIREBASE_URL:
 if not FIREBASE_URL.endswith("/"):
     FIREBASE_URL += "/"
 
-def get_accurate_2d(set_val, value_val):
-    try:
-        # ၁။ SET ရဲ့ နောက်ဆုံးဂဏန်းကို ယူပါမယ် (ဥပမာ - 1,621.11 -> 1)
-        set_str = str(set_val).strip()
-        digit_1 = set_str[-1] if set_str else "-"
-        
-        # ၂။ Value ရဲ့ ဒသမသမမတိုင်ခင် (အပြည့်ကိန်း) ရဲ့ နောက်ဆုံးဂဏန်းကို ယူပါမယ် (ဥပမာ - 43,537.24 -> 7)
-        value_str = str(value_val).strip()
-        if "." in value_str:
-            value_integer = value_str.split(".")[0] # . ရဲ့ အရှေ့ပိုင်းကိုပဲ ဖြတ်ယူမယ်
-        else:
-            value_integer = value_str
-        digit_2 = value_integer[-1] if value_integer else "-"
-        
-        if digit_1 != "-" and digit_2 != "-":
-            return digit_1 + digit_2
-        return "--"
-    except:
-        return "--"
-
 def fetch_and_save():
     try:
         response = requests.get("https://api.thaistock2d.com/live", timeout=15)
         
         if response.status_code == 200:
-            result = response.json()
+            data = response.json()
             
-            # API မှ SET နှင့် Value ကို တိုက်ရိုက်ရယူခြင်း
-            set_val = str(result.get("live", {}).get("set", "")).strip()
-            value_val = str(result.get("live", {}).get("value", "")).strip()
+            # ၁။ App တွေလိုမျိုး ပြီးသွားတဲ့ ဂဏန်းအသေ (Result) တွေကို အရင်ရှာမယ်
+            results_list = data.get("result", [])
+            morning_data = None
+            evening_data = None
             
-            # 2D တွက်ထုတ်မည့် ဖော်မြူလာအမှန်ဖြင့် တိတိကျကျ တွက်ချက်ခြင်း
-            twod_number = get_accurate_2d(set_val, value_val)
+            for item in results_list:
+                time_str = item.get("open_time", "")
+                if "12:" in time_str:  # ၁၂ နာရီပွဲ (မနက်ပိုင်း)
+                    morning_data = item.get("twod")
+                elif "16:30" in time_str:  # ၄ နာရီခွဲပွဲ (ညနေပိုင်း)
+                    evening_data = item.get("twod")
             
-            # မြန်မာစံတော်ချိန် တွက်ချက်ခြင်း
+            # ၂။ တကယ်လို့ ပွဲမပြီးသေးလို့ Result မထွက်သေးရင် Live ကနေ တိတိကျကျ အရန်တွက်မယ်
+            live_set = str(data.get("live", {}).get("set", "")).replace(",", "").strip()
+            live_value = str(data.get("live", {}).get("value", "")).replace(",", "").strip()
+            
+            live_twod = "--"
+            try:
+                if live_set and live_value:
+                    val_int = live_value.split(".")[0]  # ဒသမနောက်က ဂဏန်းများကို ဖြတ်ထုတ်ခြင်း
+                    live_twod = live_set[-1] + val_int[-1]
+            except:
+                pass
+            
+            # ၃။ မြန်မာစံတော်ချိန် တွက်ချက်ခြင်း
             now_utc = datetime.utcnow()
             mmt_time = now_utc + timedelta(hours=6, minutes=30)
             today_str = mmt_time.strftime("%Y-%m-%d")
             
             payload = {"updated_at": mmt_time.isoformat()}
+            final_number = "--"
             
-            # နေ့လည် (၂) နာရီ မတိုင်ခင်ဆိုရင် morning၊ ကျော်ရင် evening
+            # နေ့လည် ၂ နာရီမတိုင်ခင်လား (သို့) ကျော်သွားပြီလား ခွဲခြားမယ်
             if mmt_time.hour < 14:
-                payload["morning"] = twod_number
-                payload["morning_set"] = set_val
-                payload["morning_value"] = value_val
+                # မနက်ပိုင်းအတွက် (Result ရှိရင် ယူမယ်၊ မရှိရင် Live ကိုယူမယ်)
+                final_number = morning_data if morning_data else live_twod
+                payload["morning"] = final_number
             else:
-                payload["evening"] = twod_number
-                payload["evening_set"] = set_val
-                payload["evening_value"] = value_val
-            
+                # ညနေပိုင်းအတွက် (Result ရှိရင် ယူမယ်၊ မရှိရင် Live ကိုယူမယ်)
+                final_number = evening_data if evening_data else live_twod
+                payload["evening"] = final_number
+                
+            # ၄။ Firebase သို့ ပို့ခြင်း
             firebase_endpoint = f"{FIREBASE_URL}history/{today_str}.json"
             db_response = requests.patch(firebase_endpoint, json=payload)
             
             if db_response.status_code == 200:
-                print(f"အောင်မြင်သည်! 2D: {twod_number} (SET: {set_val}, Value: {value_val})")
+                print(f"အောင်မြင်သည်! 2D: {final_number} ကို App အတိုင်း တိုက်ရိုက် သိမ်းဆည်းပြီးပါပြီ။")
             else:
                 print(f"Database Error: {db_response.text}")
                 
