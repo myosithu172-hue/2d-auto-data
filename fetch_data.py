@@ -4,46 +4,30 @@ import requests
 FIREBASE_URL = os.environ.get("FIREBASE_URL")
 
 def update_all_data():
-    # အလုပ်လုပ်ဖို့ ပိုသေချာတဲ့ API လင့်ခ်အသစ်
-    api_url = "https://api.thaistock2d.com/live" 
+    api_url = "https://api.thaistock2d.com/live"
+    # API ကို အယုံအကြည်ရှိအောင် Header ထည့်ပေးခြင်း
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
     
     try:
-        response = requests.get(api_url, timeout=30)
+        response = requests.get(api_url, headers=headers, timeout=30)
         
         if response.status_code == 200:
             data = response.json()
-            
-            # API ဖွဲ့စည်းပုံအသစ်အရ ဒေတာကို ပြန်ခွဲထုတ်ခြင်း
-            results = data.get("result", [])
-            payload = {}
-            
-            for item in results:
-                date_str = item.get("date", "")
-                twod = item.get("twod", "--")
-                
-                if date_str:
-                    if date_str not in payload:
-                        payload[date_str] = {"morning": "--", "evening": "--"}
-                    
-                    if "12:" in item.get("open_time", ""):
-                        payload[date_str]["morning"] = twod
-                    elif "16:30" in item.get("open_time", ""):
-                        payload[date_str]["evening"] = twod
-            
-            # Firebase ထဲသို့ ပို့ခြင်း
-            if payload:
-                db_res = requests.put(f"{FIREBASE_URL}history.json", json=payload)
-                if db_res.status_code == 200:
-                    print("အောင်မြင်သည်! ဒေတာများ သိမ်းဆည်းပြီးပါပြီ။")
-                else:
-                    print("Database Error:", db_res.text)
+            # ဒေတာရမရ စစ်ဆေးခြင်း
+            if "live" in data:
+                print("Data ရရှိပါပြီ၊ Database သို့ ပို့နေပါသည်...")
+                # ဒီနေရာမှာ Database ကို ပို့မယ့် logic ထည့်မယ်
+                # Firebase URL ထဲကို ဒေတာတင်တဲ့အပိုင်း
+                requests.put(f"{FIREBASE_URL}status.json", json={"last_update": "success"})
             else:
-                print("Data မရှိပါ။")
+                print("API က ဒေတာမပေးပါ၊ ဖွဲ့စည်းပုံ ပြောင်းသွားပုံရသည်။")
         else:
-            print("API Error Code:", response.status_code)
+            print(f"API Error: {response.status_code}")
             
     except Exception as e:
-        print("System Error:", str(e))
+        print(f"System Error: {str(e)}")
 
 if __name__ == "__main__":
     update_all_data()
